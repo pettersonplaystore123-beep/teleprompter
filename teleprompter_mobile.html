@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Teleprompter Mobile</title>
+  <style>
+    :root{--bg:#0b0d10;--panel:#0f1114;--text:#e7eef8;--accent:#2ea6ff;--highlight:#ffff66;--bright:#ffffff}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+    header{padding:12px 16px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);display:flex;gap:12px;align-items:center}
+    header h1{font-size:16px;margin:0}
+    #toggleLeft{margin-left:auto;font-size:18px}
+    button,input[type=range],input[type=file]{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--text);padding:6px 8px;border-radius:10px}
+    button:hover{border-color:var(--accent);cursor:pointer}
+    main{display:flex;gap:12px;padding:12px;flex:1;overflow:hidden}
+    .left,.right{background:var(--panel);border-radius:12px;padding:12px;box-shadow:0 4px 18px rgba(0,0,0,0.6);min-width:0}
+    .left{flex:0 0 550px;display:flex;flex-direction:column;gap:10px;max-width:55%;min-width:300px}
+    .right{flex:1;display:flex;flex-direction:column;gap:10px;align-items:stretch}
+    textarea{width:100%;height:1500px;background:transparent;border:1px dashed rgba(255,255,255,0.04);padding:10px;border-radius:8px;color:var(--text);resize:vertical;white-space:pre-wrap}
+    #preview{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden}
+    #lyrics{width:100%;flex:1;overflow-y:scroll;padding:20px 12px;border-radius:8px;line-height:1.6;font-size:28px;color:var(--text);background:transparent;text-align:center;scroll-behavior:smooth;text-shadow:0 0 4px rgba(0,0,0,0.8)}
+    .line{padding:6px 0;opacity:0.85}
+    .toolbar{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;font-size:18px;padding-bottom:6px}
+    .toolbar button{flex-shrink:0;min-width:40px;min-height:40px}
+    #musicTitle{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:var(--text)}
+    #saveSong{align-self:flex-end;font-size:16px}
+    #scrollSpeed{width:150px}
+    
+    /* MOBILE */
+    @media(max-width:900px){
+      main{flex-direction:column;padding:8px}
+      .left{display:none;max-width:100%;flex-basis:auto;min-width:auto;padding:8px}
+      .right{padding:8px}
+      header{padding:8px 12px}
+      textarea{height:400px}
+      .toolbar{font-size:20px;overflow-x:auto;justify-content:flex-start;gap:8px}
+      #lyrics{font-size:22px;line-height:1.4;touch-action:pan-y pinch-zoom}
+      #scrollSpeed{width:100px}
+      #speedDisplay{display:none}
+      #toggleLeft{display:block;font-size:22px}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Teleprompter Mobile</h1>
+    <button id="toggleLeft">⚙️</button>
+  </header>
+  <main>
+    <section class="left">
+      <label>Música:</label>
+      <input type="text" id="musicTitle" placeholder="Nome da música">
+      <button id="saveSong">💾 Salvar Repertório</button>
+      <label>Letra / Texto</label>
+      <textarea id="textInput" placeholder="Cole a letra aqui — use quebras de linha para dividir por trecho/verso"></textarea>
+      <button id="splitLines">Dividir em Linhas</button>
+      <label>Importar Áudio:</label>
+      <input type="file" id="audioFile" accept="audio/*">
+      <div id="audioName">Nenhum áudio carregado</div>
+      <label>Velocidade do Áudio (BPM):</label>
+      <input id="bpmRange" type="range" min="0.5" max="2" step="0.01" value="1">
+      <div>Fator de Velocidade do Áudio: <span id="bpmDisplay">1</span>x</div>
+    </section>
+
+    <section class="right">
+      <div class="toolbar">
+        <button id="playAudio" title="Tocar Áudio">▶️</button>
+        <button id="playTeleprompter" title="Rolar Teleprompter">📜</button>
+        <button id="playBoth" title="Tocar Ambos">🔊</button>
+        <button id="pauseBoth" title="Pausar">⏸️</button>
+        <button id="increaseFont" title="Aumentar Fonte">➕</button>
+        <button id="decreaseFont" title="Diminuir Fonte">➖</button>
+        <button id="toggleColor" title="Trocar Cor">🎨</button>
+        <label for="scrollSpeed" title="Velocidade da Rolagem">⏩</label>
+        <input id="scrollSpeed" type="range" min="1" max="1000" step="1" value="50">
+        <span id="speedDisplay">951ms</span>
+      </div>
+      <div id="preview">
+        <div id="lyrics"></div>
+      </div>
+    </section>
+  </main>
+
+  <audio id="audio"></audio>
+
+  <script>
+    const audio = document.getElementById('audio');
+    const audioFile = document.getElementById('audioFile');
+    const audioName = document.getElementById('audioName');
+    const textInput = document.getElementById('textInput');
+    const lyrics = document.getElementById('lyrics');
+    const splitLinesBtn = document.getElementById('splitLines');
+    const playAudioBtn = document.getElementById('playAudio');
+    const playTeleprompterBtn = document.getElementById('playTeleprompter');
+    const playBothBtn = document.getElementById('playBoth');
+    const pauseBothBtn = document.getElementById('pauseBoth');
+    const bpmRange = document.getElementById('bpmRange');
+    const bpmDisplay = document.getElementById('bpmDisplay');
+    const scrollSpeedRange = document.getElementById('scrollSpeed');
+    const speedDisplay = document.getElementById('speedDisplay');
+    const leftPanel = document.querySelector('.left');
+    const toggleLeftBtn = document.getElementById('toggleLeft');
+    const saveSongBtn = document.getElementById('saveSong');
+    const musicTitle = document.getElementById('musicTitle');
+    const increaseFont = document.getElementById('increaseFont');
+    const decreaseFont = document.getElementById('decreaseFont');
+    const toggleColor = document.getElementById('toggleColor');
+
+    let lines = [];
+    let teleprompterPlaying = false;
+    let teleprompterInterval = null;
+    let scrollSpeedFactor = 951;
+    let fontSize = 28;
+    let colorToggle = false;
+    let audioDataURL = null;
+
+    function renderLines(){
+      lyrics.innerHTML = '';
+      lines.forEach((l,i)=>{
+        const div = document.createElement('div');
+        div.className = 'line';
+        div.dataset.index = i;
+        div.textContent = l;
+        lyrics.appendChild(div);
+      });
+      lyrics.scrollTop = 0;
+    }
+
+    splitLinesBtn.addEventListener('click', ()=>{
+      lines = textInput.value.split(/\n+/).map(s=>s.trim()).filter(s=>s.length>0);
+      renderLines();
+    });
+
+    audioFile.addEventListener('change', (e)=>{
+      const file = e.target.files[0];
+      if(file){
+        audio.src = URL.createObjectURL(file);
+        audioName.textContent = file.name;
+        const reader = new FileReader();
+        reader.onload = ()=>{ audioDataURL = reader.result; };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    bpmRange.addEventListener('input', ()=>{
+      const factor = parseFloat(bpmRange.value);
+      bpmDisplay.textContent = factor.toFixed(2);
+      audio.playbackRate = factor;
+    });
+
+    scrollSpeedRange.addEventListener('input', ()=>{
+      const rawValue = parseInt(scrollSpeedRange.value);
+      scrollSpeedFactor = 1001 - rawValue;
+      speedDisplay.textContent = scrollSpeedFactor + 'ms';
+      if(teleprompterPlaying){
+        clearInterval(teleprompterInterval);
+        teleprompterPlaying = false;
+        startTeleprompter();
+      }
+    });
+
+    function scrollTeleprompter(){ lyrics.scrollTop += 1; }
+
+    function startTeleprompter(){
+      if(!teleprompterPlaying){
+        teleprompterPlaying = true;
+        teleprompterInterval = setInterval(scrollTeleprompter, scrollSpeedFactor);
+      }
+    }
+
+    function stopTeleprompter(){
+      if(teleprompterPlaying){
+        clearInterval(teleprompterInterval);
+        teleprompterPlaying = false;
+      }
+    }
+
+    playAudioBtn.addEventListener('click', ()=> audio.play());
+    playTeleprompterBtn.addEventListener('click', startTeleprompter);
+    playBothBtn.addEventListener('click', ()=>{ audio.play(); startTeleprompter(); });
+    pauseBothBtn.addEventListener('click', ()=>{ audio.pause(); stopTeleprompter(); });
+
+    toggleLeftBtn.addEventListener('click', () => {
+      if (leftPanel.style.display === 'none' || getComputedStyle(leftPanel).display === 'none') {
+        leftPanel.style.display = 'flex';
+      } else {
+        leftPanel.style.display = 'none';
+      }
+    });
+
+    saveSongBtn.addEventListener('click', ()=>{
+      const data = {
+        title: musicTitle.value.trim() || 'Sem título',
+        lyrics: textInput.value,
+        bpm: bpmRange.value,
+        scrollSpeed: scrollSpeedRange.value,
+        audio: audioDataURL
+      };
+      localStorage.setItem('repertorio_' + data.title, JSON.stringify(data));
+      alert('Repertório salvo com sucesso!');
+    });
+
+    increaseFont.addEventListener('click', ()=>{
+      fontSize += 2;
+      lyrics.style.fontSize = fontSize + 'px';
+    });
+    decreaseFont.addEventListener('click', ()=>{
+      fontSize = Math.max(10, fontSize - 2);
+      lyrics.style.fontSize = fontSize + 'px';
+    });
+
+    toggleColor.addEventListener('click', ()=>{
+      colorToggle = !colorToggle;
+      lyrics.style.color = colorToggle ? 'var(--highlight)' : 'var(--bright)';
+    });
+  </script>
+</body>
+</html>
